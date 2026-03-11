@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 import torch
 
+from config_loader import deep_get, get_model_config, resolve_repo_path
 from llm.base import BaseLLM
 
 try:
@@ -26,7 +27,9 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
     AUTO_MODEL_AVAILABLE = False
     USE_NEW_API = False
-    print("Warning: transformers not installed. Install with: pip install transformers")
+    logging.getLogger(__name__).warning(
+        "transformers is not installed. Install with: pip install transformers torch"
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +44,7 @@ class Qwen3VL4BInstruct(BaseLLM):
     
     def __init__(
         self,
-        model_path: str = "Qwen/Qwen2.5-VL-3B-Instruct",
+        model_path: Optional[str] = None,
         device: Optional[str] = None,
         torch_dtype: Optional[Union[str, torch.dtype]] = None
     ):
@@ -53,6 +56,26 @@ class Qwen3VL4BInstruct(BaseLLM):
             device: Device to use ('cuda', 'cpu', or None for auto-detection)
             torch_dtype: Torch dtype to use (None for auto-detection, or string like 'float16', 'bfloat16')
         """
+        model_config = get_model_config()
+        defaults = model_config.get("defaults", {})
+        qwen_config = deep_get(model_config, "llm", "qwen3_vl_4b_instruct", default={}) or {}
+
+        configured_model_id = qwen_config.get("model_id", "Qwen/Qwen3-VL-4B-Instruct")
+        configured_local_path = qwen_config.get("local_path")
+        if model_path is None:
+            if configured_local_path:
+                local_candidate = resolve_repo_path(configured_local_path)
+                model_path = str(local_candidate) if local_candidate and local_candidate.exists() else configured_model_id
+            else:
+                model_path = configured_model_id
+
+        device = device or qwen_config.get("device") or defaults.get("device")
+        torch_dtype = torch_dtype or qwen_config.get("dtype") or defaults.get("dtype")
+        self.trust_remote_code = qwen_config.get(
+            "trust_remote_code",
+            defaults.get("trust_remote_code", False),
+        )
+
         super().__init__(model_path, device, torch_dtype)
         
         if not TRANSFORMERS_AVAILABLE:
@@ -92,14 +115,14 @@ class Qwen3VL4BInstruct(BaseLLM):
         try:
             self.processor = Qwen2VLProcessor.from_pretrained(
                 self.model_source,
-                trust_remote_code=True
+                trust_remote_code=self.trust_remote_code
             )
         except Exception as e:
             logger.warning(f"Qwen2VLProcessor failed: {e}, trying AutoProcessor")
             try:
                 self.processor = AutoProcessor.from_pretrained(
                     self.model_source,
-                    trust_remote_code=True
+                    trust_remote_code=self.trust_remote_code
                 )
             except Exception as e2:
                 raise RuntimeError(f"Failed to load processor: {e}, {e2}")
@@ -108,7 +131,7 @@ class Qwen3VL4BInstruct(BaseLLM):
         # Try Qwen2VLForConditionalGeneration first, then fallback to AutoModel
         # Use dtype parameter (newer API) with fallback to torch_dtype for compatibility
         load_kwargs = {
-            "trust_remote_code": True,
+            "trust_remote_code": self.trust_remote_code,
         }
         
         # Try dtype first (newer API), fallback to torch_dtype if needed

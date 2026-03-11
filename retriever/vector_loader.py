@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
+from config_loader import deep_get, get_data_config, resolve_repo_path
 from database.entities import TBChunk, TBDocument, TBEmbedding, TBPage
 from retriever.db_context import RetrieverDbContext
 
@@ -25,9 +26,12 @@ class VectorLoader:
     ):
         self.db_context = db_context
 
-        base_dir = Path(__file__).parent.parent
-        self.embeddings_dir = embeddings_dir or (base_dir / "outputs" / "embeddings")
-        self.results_dir = results_dir or (base_dir / "results")
+        data_config = get_data_config()
+        configured_embeddings_dir = deep_get(data_config, "paths", "embeddings_dir", default="./data/embeddings")
+        configured_results_dir = deep_get(data_config, "paths", "results_dir", default="./results")
+
+        self.embeddings_dir = embeddings_dir or resolve_repo_path(configured_embeddings_dir)
+        self.results_dir = results_dir or resolve_repo_path(configured_results_dir)
 
     def load_from_database(
         self,

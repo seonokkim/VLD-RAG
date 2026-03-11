@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 import torch
 
+from config_loader import deep_get, get_model_config, resolve_repo_path
 from llm.base import BaseLLM
 
 try:
@@ -21,7 +22,9 @@ try:
     TRANSFORMERS_AVAILABLE = True
 except ImportError:
     TRANSFORMERS_AVAILABLE = False
-    print("Warning: transformers not installed. Install with: pip install transformers")
+    logging.getLogger(__name__).warning(
+        "transformers is not installed. Install with: pip install transformers torch"
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +39,7 @@ class InternVL35_4B(BaseLLM):
     
     def __init__(
         self,
-        model_path: str = "OpenGVLab/InternVL3_5-4B",
+        model_path: Optional[str] = None,
         device: Optional[str] = None,
         torch_dtype: Optional[Union[str, torch.dtype]] = None
     ):
@@ -48,6 +51,26 @@ class InternVL35_4B(BaseLLM):
             device: Device to use ('cuda', 'cpu', or None for auto-detection)
             torch_dtype: Torch dtype to use (None for auto-detection, or string like 'float16', 'bfloat16')
         """
+        model_config = get_model_config()
+        defaults = model_config.get("defaults", {})
+        internvl_config = deep_get(model_config, "llm", "internvl3_5_4b", default={}) or {}
+
+        configured_model_id = internvl_config.get("model_id", "OpenGVLab/InternVL3_5-4B")
+        configured_local_path = internvl_config.get("local_path")
+        if model_path is None:
+            if configured_local_path:
+                local_candidate = resolve_repo_path(configured_local_path)
+                model_path = str(local_candidate) if local_candidate and local_candidate.exists() else configured_model_id
+            else:
+                model_path = configured_model_id
+
+        device = device or internvl_config.get("device") or defaults.get("device")
+        torch_dtype = torch_dtype or internvl_config.get("dtype") or defaults.get("dtype")
+        self.trust_remote_code = internvl_config.get(
+            "trust_remote_code",
+            defaults.get("trust_remote_code", False),
+        )
+
         super().__init__(model_path, device, torch_dtype)
         
         if not TRANSFORMERS_AVAILABLE:
@@ -89,7 +112,7 @@ class InternVL35_4B(BaseLLM):
             # First try AutoProcessor
             self.processor = AutoProcessor.from_pretrained(
                 self.model_source,
-                trust_remote_code=True
+                trust_remote_code=self.trust_remote_code
             )
         except Exception as e:
             logger.warning(f"AutoProcessor failed: {e}, trying separate tokenizer and image_processor")
@@ -97,11 +120,11 @@ class InternVL35_4B(BaseLLM):
                 # Try loading tokenizer and image processor separately
                 self.tokenizer = AutoTokenizer.from_pretrained(
                     self.model_source,
-                    trust_remote_code=True
+                    trust_remote_code=self.trust_remote_code
                 )
                 self.image_processor = AutoImageProcessor.from_pretrained(
                     self.model_source,
-                    trust_remote_code=True
+                    trust_remote_code=self.trust_remote_code
                 )
                 # Create a simple processor-like object
                 class SimpleProcessor:
@@ -142,7 +165,7 @@ class InternVL35_4B(BaseLLM):
             from transformers import AutoModel
             self.model = AutoModel.from_pretrained(
                 self.model_source,
-                trust_remote_code=True,
+                trust_remote_code=self.trust_remote_code,
                 torch_dtype=self.torch_dtype
             ).to(self.device)
             self.model.eval()
@@ -151,7 +174,7 @@ class InternVL35_4B(BaseLLM):
             try:
                 self.model = AutoModelForCausalLM.from_pretrained(
                     self.model_source,
-                    trust_remote_code=True,
+                    trust_remote_code=self.trust_remote_code,
                     torch_dtype=self.torch_dtype
                 ).to(self.device)
                 self.model.eval()

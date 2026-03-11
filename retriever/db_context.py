@@ -6,12 +6,12 @@ Provides database connection management for loading embeddings from database.
 
 import logging
 import os
-import yaml
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from playhouse.postgres_ext import PostgresqlExtDatabase
+from config_loader import get_database_config
 
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
@@ -21,24 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 def load_db_config(config_path: Optional[str] = None) -> dict:
-    """Load database configuration from config.yaml file."""
-    if config_path is None:
-        project_root = Path(__file__).parent.parent
-        config_path = project_root / "configs" / "config.yaml"
-    else:
-        config_path = Path(config_path)
-    
-    if not config_path.exists():
-        logger.warning(f"Config file not found at {config_path}. Using defaults.")
-        return {}
-    
-    try:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        return config.get('postgres', {})
-    except Exception as e:
-        logger.warning(f"Failed to load config from {config_path}: {e}. Using defaults.")
-        return {}
+    """Load database configuration from the tracked YAML config."""
+    return get_database_config(config_path)
 
 
 class RetrieverDbContext:
@@ -62,18 +46,18 @@ class RetrieverDbContext:
             port: Database port (if None, loads from config)
             user: Database user (if None, loads from config)
             password: Database password (if None, tries to get from env or config)
-            config_path: Path to config.yaml
+            config_path: Optional path to a database config YAML file
         """
         db_config = load_db_config(config_path)
         
-        host = host or db_config.get('host', 'localhost')
-        port = port or db_config.get('port', 5432)
-        database = database or db_config.get('dbname', 'rag_local')
-        user = user or db_config.get('user', 'postgres')
+        host = host or db_config.get("host", "localhost")
+        port = port or db_config.get("port", 5432)
+        database = database or db_config.get("name") or db_config.get("dbname", "rag_local")
+        user = user or db_config.get("user", "postgres")
         
         if password is None:
-            password_env = db_config.get('password_env', 'PGPASSWORD_LOCAL')
-            password = os.getenv(password_env) or os.getenv('PGPASSWORD_LOCAL') or os.getenv('PGPASSWORD')
+            password_env = db_config.get("password_env", "PGPASSWORD_LOCAL")
+            password = os.getenv(password_env) or os.getenv("PGPASSWORD_LOCAL") or os.getenv("PGPASSWORD")
         
         self.connect_params = {
             'host': host,

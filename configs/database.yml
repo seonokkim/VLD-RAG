@@ -1,0 +1,10 @@
+# Database connection defaults
+#
+# Keep non-secret values here and provide secrets through environment variables.
+
+database:
+  host: localhost
+  port: 5432
+  name: rag_local
+  user: postgres
+  password_env: PGPASSWORD_LOCAL

@@ -1,195 +1,259 @@
-# VLD-RAG: Visually-rich Long Document Retrieval-Augmented Generation
+# VLD-RAG
 
-> **Work in Progress**  
-> This project is currently under active development.
+`VLD-RAG` is a research codebase for visually rich long-document retrieval workflows.
 
-Visually-rich documents such as reports, slides, and manuals often distribute the evidence needed to answer a question across multiple pages, mixing text with layout cues, tables, charts, and figures. This work studies multimodal retrieval-augmented generation for question answering over such visually-rich long documents, where retrieval must select evidence pages that include both textual and visual signals.
+![VLD-RAG overview](assets/figure.png)
 
-## Overview
+At the moment, this repository exposes reusable building blocks rather than a full end-to-end public product. The current codebase is centered on:
 
-VLD-RAG is an agentic multimodal RAG framework for multi-page evidence retrieval and cross-page reasoning over long documents. VLD-RAG builds a page-preserving multimodal index that stores parsed text, page-level metadata, and dense visual representations, and uses a hybrid retrieval strategy that combines keyword-based sparse search with dense semantic queries to identify candidate sources and evidence pages.
+- page parsing for visually rich documents
+- sparse and dense retrieval components
+- PostgreSQL/Peewee database entities for documents, pages, chunks, and embeddings
+- retrieval evaluation metrics
 
-A verifier-guided agent workflow coordinates a Retrieval Agent, Answer Agent, and Validation Agent to broaden evidence coverage, detect missing citations, and refine retrieval requests when needed.
+## Current Scope
 
-## Key Features
+The repository currently includes:
 
-- **Page-preserving Multimodal Index**: Stores parsed text, page-level metadata, and dense visual representations
-- **Hybrid Retrieval Strategy**: Combines keyword-based sparse search (BM25) with dense semantic queries
-- **Agentic Workflow**: Coordinated Retrieval Agent, Answer Agent, and Validation Agent
-- **Multi-page Evidence Retrieval**: Handles evidence scattered across multiple pages
-- **Cross-page Reasoning**: Enables reasoning over evidence from multiple pages
-- **Neon PostgreSQL Integration**: Database entities for document, page, chunk, and embedding management
-- **Comprehensive Evaluation Metrics**: Retrieval evaluation metrics (Recall@K, MRR, nDCG)
+- `parser/` for page parsing and normalized parser outputs
+- `retriever/` for BM25 retrieval, ColPali-based retrieval, vector loading, and scoring
+- `database/` for the active ORM schema and pgvector field support
+- `llm/` for lightweight wrappers around multimodal LLMs
+- `eval/` for retrieval metrics
+- `configs/` for portable path and model configuration examples
 
-## Project Structure
+What it does not currently provide as a polished public interface:
 
-```
-VLD_RAG/
-├── parser/                    # Document parsing engines
-│   ├── engines/               # Parser engine implementations
-│   │   ├── paddle_ocr.py      # PaddleOCR parser with PP-StructureV3 support
+- a packaged Python distribution
+- a complete end-to-end benchmark reproduction pipeline
+- a single documented CLI or application entrypoint
+
+## Repository Layout
+
+```text
+VLD-RAG/
+├── configs/
+│   ├── data.yml
+│   └── model.yml
+├── database/
+│   ├── README.md
+│   ├── entities.py
+│   ├── vector_field.py
+│   └── __init__.py
+├── eval/
+│   ├── retrieval_metrics.py
+│   └── __init__.py
+├── llm/
+│   ├── base.py
+│   ├── internvl3_5_4b.py
+│   ├── qwen3_vl_4b_instruct.py
+│   └── __init__.py
+├── parser/
+│   ├── engines/
+│   │   ├── paddle_ocr.py
 │   │   └── __init__.py
-│   ├── base.py                # Base parser interface
-│   ├── schema.py              # Common schema definitions (PageParse, Block, BBox)
+│   ├── base.py
+│   ├── schema.py
 │   └── __init__.py
-├── llm/                       # Vision-Language Model integrations
-│   ├── base.py                # Base LLM interface
-│   ├── qwen3_vl_4b_instruct.py  # Qwen3-VL-4B-Instruct wrapper
-│   ├── internvl3_5_4b.py      # InternVL3-5-4B wrapper
-│   └── __init__.py
-├── retriever/                 # Retrieval components
-│   ├── bm25_retriever.py      # BM25 sparse text retrieval
-│   ├── colpali_vision_retriever.py  # ColPali vision-based retrieval
-│   ├── vector_loader.py       # Vector embedding loader
-│   ├── scorer.py              # Embedding similarity scorer
-│   ├── db_context.py          # Database context for retrieval
-│   └── __init__.py
-├── database/                   # Database entities and utilities
-│   ├── entities.py            # Neon PostgreSQL ORM entities (Peewee)
-│   ├── vector_field.py        # Custom VectorField for pgvector support
-│   └── __init__.py
-├── eval/                       # Evaluation metrics
-│   ├── retrieval_metrics.py   # Retrieval evaluation metrics (R@K, MRR, nDCG)
+├── retriever/
+│   ├── bm25_retriever.py
+│   ├── colpali_vision_retriever.py
+│   ├── db_context.py
+│   ├── scorer.py
+│   ├── vector_loader.py
 │   └── __init__.py
 └── README.md
 ```
 
-## Modules
+## Main Components
 
-### Parser Module (`parser/`)
+### Parser
 
-Document parsing engines for extracting text, tables, figures, and layout information from visually-rich documents.
+`parser/engines/paddle_ocr.py` provides `PaddleOCRParser`, which turns a page image into normalized parser output using the shared schema from `parser/schema.py`.
 
-- **PaddleOCRParser**: PaddleOCR-based parser with PP-StructureV3 support
-  - Chart recognition
-  - Table/formula recognition
-  - Document unwarping and orientation classification
-  - Markdown/JSON export
-  - Element-based normalization for RAG input
+Current parser-facing data structures:
 
-- **Schema**: Common output schema (`PageParse`, `Block`, `BBox`) for unified parser output
+- `PageParse`
+- `Block`
+- `BBox`
+- `RAGElement`
 
-### LLM Module (`llm/`)
+### Retriever
 
-Vision-Language Model wrappers for question answering and image understanding.
+`retriever/` contains the main retrieval-side components:
 
-- **Qwen3VL4BInstruct**: Qwen3-VL-4B-Instruct model wrapper
-- **InternVL35_4B**: InternVL3-5-4B model wrapper
-- **BaseLLM**: Base interface for all LLM implementations
+- `BM25Retriever` for sparse text retrieval
+- `ColPaliVisionRetriever` for dense vision-oriented retrieval
+- `VectorLoader` for loading embeddings from database rows or local artifacts
+- `EmbeddingScorer` for vector similarity scoring
+- `RetrieverDbContext` for binding the retriever stack to the current database schema
 
-### Retriever Module (`retriever/`)
+### Database
 
-Hybrid retrieval components combining sparse and dense search.
+The active schema is defined in `database/entities.py` using Peewee models.
 
-- **BM25Retriever**: BM25-based sparse text retrieval
-- **ColPaliVisionRetriever**: ColPali vision-based dense retrieval
-- **VectorLoader**: Vector embedding loader for semantic search
-- **EmbeddingScorer**: Embedding similarity scoring
-- **RetrieverDbContext**: Database context for retrieval operations
+Main tables:
 
-### Database Module (`database/`)
+- `tb_runs`
+- `tb_documents`
+- `tb_pages`
+- `tb_chunks`
+- `tb_embeddings`
 
-Neon PostgreSQL database entities using Peewee ORM.
+The schema overview and Mermaid ERD are documented in `database/README.md`.
 
-- **TBDocument**: Document metadata and basic information
-- **TBPage**: Page-level information within documents
-- **TBChunk**: Chunk-level information (crops/regions from pages)
-- **TBEmbedding**: Unified embedding table supporting:
-  - Single-vector and multi-vector modes
-  - Multiple vision encoders (SigLIP, ColPali, OmniEmbed, DSE, etc.)
-  - pgvector support via `pooled_embedding_vector`
-  - Qdrant collection tracking
-  - Faiss index mapping
-- **TBRun**: Run tracking for experiments
-- **VectorField**: Custom field for pgvector support
+### LLM Wrappers
 
-### Evaluation Module (`eval/`)
+`llm/` currently provides:
 
-Retrieval evaluation metrics for assessing retrieval performance.
+- `Qwen3VL4BInstruct`
+- `InternVL35_4B`
 
-- **Recall@K**: R@1, R@5, R@10
-- **MRR@K**: Mean Reciprocal Rank at K (MRR@10, MRR@100)
-- **nDCG@K**: Normalized Discounted Cumulative Gain (nDCG@5, nDCG@10)
-- **Top-K Accuracy**: Retrieval-as-classification metrics
-- **Batch Metrics**: Aggregate metrics across multiple queries
+These wrappers accept either a local model path or a Hugging Face model ID.
+
+### Evaluation
+
+`eval/retrieval_metrics.py` provides standard retrieval metrics including:
+
+- Recall@K
+- MRR@K
+- nDCG@K
+- top-k accuracy
+- batch metric aggregation
+
+## Configuration
+
+This repository currently includes two portable config examples:
+
+- `configs/data.yml`
+- `configs/model.yml`
+
+`configs/data.yml` defines relative paths for datasets, artifacts, outputs, and results.
+
+`configs/model.yml` defines a small model registry for:
+
+- BM25 retrieval
+- ColPali retrieval
+- multimodal LLM wrappers
+- runtime cache settings
+
+These config files use repository-relative paths so they are easier to move across machines.
 
 ## Installation
 
-Installation instructions will be added as the project progresses. See `setup/` directory for future installation guides.
+There is no `pyproject.toml` yet, so setup is currently manual.
 
-### Dependencies
+Minimum recommended environment:
 
-- Python 3.8+
-- PaddleOCR (for document parsing)
-- Transformers (for LLM models)
-- Peewee ORM (for database)
-- pgvector (for vector similarity search)
-- rank-bm25 (for BM25 retrieval)
-- NumPy, PIL (for image processing)
+- Python 3.10+
+- `numpy`
+- `Pillow`
+- `peewee`
+- `psycopg2` or `psycopg2-binary`
+- `python-dotenv`
+- `PyYAML`
+- `rank-bm25`
 
-Usage examples and documentation will be added as features are completed.
+Optional dependencies by feature:
 
-### Basic Example
+- `paddleocr` and `paddlepaddle` for `PaddleOCRParser`
+- `transformers` and `torch` for the LLM wrappers and ColPali retriever
+- `pgvector` for PostgreSQL vector support
+- `pytz` for timestamp helpers in the ORM models
 
-```python
-from parser.engines import PaddleOCRParser
-from llm import Qwen3VL4BInstruct
-from retriever import BM25Retriever
+Example:
 
-# Initialize parser
-parser = PaddleOCRParser(device="cpu", use_chart_recognition=True)
-parser.initialize()
-
-# Parse document
-page_parse = parser.parse_page(
-    doc_id="doc_001",
-    page_no=0,
-    image=image,
-    image_path="path/to/page.png"
-)
-
-# Initialize LLM
-llm = Qwen3VL4BInstruct(model_path="../models/Qwen3-VL-4B-Instruct")
-
-# Answer question
-answer = llm.answer_question(image, "What is the main topic?")
-
-# Initialize retriever
-retriever = BM25Retriever(corpus=corpus)
-results = retriever.retrieve(query="example query", top_k=5)
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install numpy Pillow peewee psycopg2-binary python-dotenv PyYAML rank-bm25 pytz
 ```
 
-## Database Schema
+Add the feature-specific packages you need on top of that base environment.
 
-The system uses Neon PostgreSQL with the following main tables:
+## Quick Usage
 
-- **tb_documents**: Document metadata
-- **tb_pages**: Page-level information
-- **tb_chunks**: Chunk-level information with status tracking
-- **tb_embeddings**: Unified embedding storage (single-vector and multi-vector)
-- **tb_runs**: Experiment run tracking
-
-See `database/entities.py` for complete schema definitions.
-
-## Evaluation
-
-The evaluation module provides comprehensive retrieval metrics:
+### BM25 Retrieval
 
 ```python
-from eval import recall_at_k, mrr_at_10, ndcg_at_10, calculate_all_metrics
+from retriever import BM25Retriever
 
-# Calculate individual metrics
-r_at_5 = recall_at_k(rankings, ground_truth, k=5)
-mrr = mrr_at_10(rankings, ground_truth)
-ndcg = ndcg_at_10(rankings, ground_truth)
+corpus = [
+    {"id": "chunk_001", "text": "Revenue increased in Q4 due to stronger enterprise demand."},
+    {"id": "chunk_002", "text": "The chart shows year-over-year margin improvement."},
+]
 
-# Calculate all metrics at once
+retriever = BM25Retriever(corpus=corpus)
+results = retriever.retrieve("enterprise revenue", top_k=2)
+print(results)
+```
+
+### Retrieval Metrics
+
+```python
+from eval import calculate_all_metrics
+
+rankings = {
+    "q1": ["doc3", "doc1", "doc2"],
+    "q2": ["doc2", "doc4", "doc5"],
+}
+
+ground_truth = {
+    "q1": ["doc1"],
+    "q2": ["doc2", "doc5"],
+}
+
 metrics = calculate_all_metrics(
     rankings=rankings,
     ground_truth=ground_truth,
-    k_values=[1, 5, 10],
-    mrr_k_values=[10, 100],
-    ndcg_k_values=[5, 10]
+    k_values=[1, 3, 5],
+    mrr_k_values=[10],
+    ndcg_k_values=[3, 5],
 )
+
+print(metrics)
 ```
 
+### Page Parsing
+
+```python
+from PIL import Image
+from parser.engines import PaddleOCRParser
+
+image = Image.open("page.png")
+
+parser = PaddleOCRParser(device="cpu")
+parser.initialize()
+
+page_parse = parser.parse_page(
+    doc_id="sample-doc",
+    page_no=0,
+    image=image,
+    image_path="page.png",
+)
+
+print(page_parse.to_dict())
+```
+
+## Database Notes
+
+The retriever/database path is currently aligned to the `TB*` schema in `database/entities.py`.
+
+In particular, embedding loading is centered on:
+
+- `TBEmbedding`
+- `TBChunk`
+- `TBPage`
+- `TBDocument`
+
+The embedding model supports:
+
+- `single_vector` mode
+- `multi_vector` mode
+- optional pooled vectors via `pooled_embedding_vector`
+- artifact-backed vectors via `embedding_path` and `storage_path`
+
+## Status
+
+This repository is still evolving, but the current README is intended to describe the code that exists today rather than a larger future system.

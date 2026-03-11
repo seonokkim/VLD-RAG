@@ -21,6 +21,7 @@ except ImportError:
     PEFT_AVAILABLE = False
     PeftModel = None
 
+from config_loader import deep_get, get_model_config, resolve_repo_path
 from retriever.scorer import EmbeddingScorer
 from retriever.vector_loader import VectorLoader
 from retriever.db_context import RetrieverDbContext
@@ -39,12 +40,12 @@ class ColPaliVisionRetriever:
     
     def __init__(
         self,
-        model_name: str = "vidore/colpaligemma-3b-mix-448-base",
-        device: str = "cuda",
+        model_name: Optional[str] = None,
+        device: Optional[str] = None,
         db_context: Optional[RetrieverDbContext] = None,
         embeddings_dir: Optional[Path] = None,
         results_dir: Optional[Path] = None,
-        source: str = "auto"
+        source: Optional[str] = None
     ):
         """
         Initialize ColPali vision retriever.
@@ -57,9 +58,29 @@ class ColPaliVisionRetriever:
             results_dir: Directory containing JSON embedding files
             source: Source to load embeddings from ('database', 'npz', 'json', 'auto')
         """
+        model_config = get_model_config()
+        defaults = model_config.get("defaults", {})
+        dense_config = deep_get(model_config, "retrieval", "dense", "colpali", default={}) or {}
+
+        configured_model_id = dense_config.get("model_id", "vidore/colpaligemma-3b-mix-448-base")
+        configured_local_path = dense_config.get("local_path")
+        if model_name is None:
+            if configured_local_path:
+                local_candidate = resolve_repo_path(configured_local_path)
+                model_name = str(local_candidate) if local_candidate and local_candidate.exists() else configured_model_id
+            else:
+                model_name = configured_model_id
+
+        device = device or dense_config.get("device") or defaults.get("device", "cuda")
+        source = source or "auto"
+
         self.model_name = model_name
         self.device = self._normalize_device(device)
         self.source = source
+        self.trust_remote_code = dense_config.get(
+            "trust_remote_code",
+            defaults.get("trust_remote_code", False),
+        )
         
         self.vector_loader = VectorLoader(db_context, embeddings_dir, results_dir)
         self.scorer = EmbeddingScorer()
@@ -116,7 +137,7 @@ class ColPaliVisionRetriever:
         
         self._model = ColPaliForRetrieval.from_pretrained(
             base_model_id,
-            trust_remote_code=True,
+            trust_remote_code=self.trust_remote_code,
             torch_dtype=torch.float16 if self.device == "cuda" else torch.float32
         )
         
@@ -128,8 +149,14 @@ class ColPaliVisionRetriever:
         self._model = self._model.to(self.device)
         self._model.eval()
         
-        self._processor = SiglipProcessor.from_pretrained(base_model_id, trust_remote_code=True)
-        self._tokenizer = AutoTokenizer.from_pretrained(base_model_id, trust_remote_code=True)
+        self._processor = SiglipProcessor.from_pretrained(
+            base_model_id,
+            trust_remote_code=self.trust_remote_code,
+        )
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            base_model_id,
+            trust_remote_code=self.trust_remote_code,
+        )
         
         self._model_loaded = True
         logger.info("ColPali model loaded successfully")
