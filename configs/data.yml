@@ -1,0 +1,44 @@
+# Dataset and artifact paths
+#
+# Keep all paths relative to the repository root so the config
+# remains portable across machines and environments.
+
+project_root: .
+
+paths:
+  data_root: ./data
+  raw_documents_dir: ./data/raw
+  processed_documents_dir: ./data/processed
+  page_images_dir: ./data/page_images
+  chunks_dir: ./data/chunks
+  embeddings_dir: ./data/embeddings
+  sample_data_dir: ./data/sample
+  outputs_dir: ./outputs
+  results_dir: ./results
+
+datasets:
+  default: sample
+
+  sample:
+    enabled: true
+    documents_dir: ./data/sample/documents
+    queries_file: ./data/sample/queries.json
+    qrels_file: ./data/sample/qrels.json
+    description: Small local dataset for smoke tests and examples
+
+  long_document_qa:
+    enabled: false
+    documents_dir: ./data/long_document_qa/documents
+    queries_file: ./data/long_document_qa/queries.json
+    qrels_file: ./data/long_document_qa/qrels.json
+    description: Placeholder dataset entry for future evaluation
+
+artifacts:
+  save_parsed_pages: true
+  save_chunk_metadata: true
+  save_embeddings: false
+  save_run_outputs: true
+
+evaluation:
+  top_k: [1, 3, 5]
+  save_predictions: true

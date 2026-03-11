@@ -9,9 +9,6 @@ This module uses PP-StructureV3 pipeline with all features enabled:
 - Element-based normalization for RAG input
 
 The output is designed to be stored in tb_chunks table (MM-RAG schema).
-
-Reference:
-- C:\workspace\VLD-RAG\md\20260105_010228_paddle_ocr_module_plan.md
 """
 
 import os
@@ -142,7 +139,6 @@ class PaddleOCRParser(PageParser):
             self.output_dir = Path(output_dir)
         else:
             self.output_dir = Path("output") / "paddle_ocr"
-        self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Model instances
         self.ocr = None
@@ -450,6 +446,7 @@ class PaddleOCRParser(PageParser):
         crop = image.crop((x1, y1, x2, y2))
         
         # Save path
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         figure_dir = self.output_dir / "figures"
         figure_dir.mkdir(parents=True, exist_ok=True)
         crop_path = figure_dir / f"{figure_id}.png"
@@ -515,20 +512,18 @@ class PaddleOCRParser(PageParser):
             elements: RAG-ready Element list
             doc_id: Document ID
             page_id: Page ID
-            source_key: Source tracking information (JSONB, e.g.: {"doc_no": "4026369", "page_no": 25})
+            source_key: Source tracking information (JSONB, e.g.: {"doc_id": "sample-doc", "page_no": 25})
         
         Returns:
             List[str]: List of saved chunk_id values
         """
         try:
             from database.entities import TBChunk
-            from document.markdown_serializer import MarkdownSerializer
         except ImportError as e:
-            logger.error(f"Failed to import database entities or markdown serializer: {e}")
-            logger.error("Make sure database.entities and document.markdown_serializer are available")
+            logger.error(f"Failed to import database entities: {e}")
+            logger.error("Make sure database.entities is available")
             return []
-        
-        md_serializer = MarkdownSerializer(include_metadata=False)
+
         chunk_ids = []
         
         for idx, element in enumerate(elements):
@@ -556,8 +551,8 @@ class PaddleOCRParser(PageParser):
             )
             block = self._element_to_block(element, temp_page_parse)
             
-            # Generate Markdown text (using MarkdownSerializer)
-            markdown_text = md_serializer.serialize_block(block)
+            # Use a simple built-in serializer to avoid relying on internal-only modules.
+            markdown_text = self._serialize_block_markdown(block)
             
             # OCR text (for paragraphs)
             ocr_text = element.text if element.type == "paragraph" else None
@@ -602,3 +597,10 @@ class PaddleOCRParser(PageParser):
                 continue
         
         return chunk_ids
+
+    def _serialize_block_markdown(self, block: Block) -> str:
+        """Serialize a parser block into lightweight Markdown."""
+        if block.type == "table" and block.table_html:
+            return block.table_html
+
+        return (block.text or "").strip()

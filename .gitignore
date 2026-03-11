@@ -63,7 +63,6 @@ logs/
 # Data and model files
 outputs/
 results/
-data/
 models/
 *.npz
 *.pth
@@ -121,3 +120,7 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+
+# Dev Resources
+dev_resources/

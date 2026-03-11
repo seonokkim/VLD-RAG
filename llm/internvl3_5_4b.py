@@ -36,7 +36,7 @@ class InternVL35_4B(BaseLLM):
     
     def __init__(
         self,
-        model_path: str = "../models/models-small-3b-6b/InternVL3_5-4B",
+        model_path: str = "OpenGVLab/InternVL3_5-4B",
         device: Optional[str] = None,
         torch_dtype: Optional[Union[str, torch.dtype]] = None
     ):
@@ -44,7 +44,7 @@ class InternVL35_4B(BaseLLM):
         Initialize InternVL3-5-4B model.
         
         Args:
-            model_path: Path to the model directory
+            model_path: Local path or Hugging Face model ID
             device: Device to use ('cuda', 'cpu', or None for auto-detection)
             torch_dtype: Torch dtype to use (None for auto-detection, or string like 'float16', 'bfloat16')
         """
@@ -56,12 +56,7 @@ class InternVL35_4B(BaseLLM):
                 "Install with: pip install transformers torch"
             )
         
-        self.model_path = Path(model_path)
-        if not self.model_path.exists():
-            raise FileNotFoundError(
-                f"Model path does not exist: {model_path}\n"
-                f"Please check if the model is downloaded to the correct location."
-            )
+        self.model_source = self._resolve_model_source(model_path)
         
         # Auto-detect device
         if device is None:
@@ -86,14 +81,14 @@ class InternVL35_4B(BaseLLM):
         else:
             self.torch_dtype = torch_dtype
         
-        logger.info(f"Loading InternVL3-5-4B from {model_path}")
+        logger.info(f"Loading InternVL3-5-4B from {self.model_source}")
         logger.info(f"Device: {self.device}, Dtype: {self.torch_dtype}")
         
         # Load processor - try different methods for InternVL
         try:
             # First try AutoProcessor
             self.processor = AutoProcessor.from_pretrained(
-                str(self.model_path),
+                self.model_source,
                 trust_remote_code=True
             )
         except Exception as e:
@@ -101,11 +96,11 @@ class InternVL35_4B(BaseLLM):
             try:
                 # Try loading tokenizer and image processor separately
                 self.tokenizer = AutoTokenizer.from_pretrained(
-                    str(self.model_path),
+                    self.model_source,
                     trust_remote_code=True
                 )
                 self.image_processor = AutoImageProcessor.from_pretrained(
-                    str(self.model_path),
+                    self.model_source,
                     trust_remote_code=True
                 )
                 # Create a simple processor-like object
@@ -146,7 +141,7 @@ class InternVL35_4B(BaseLLM):
             # InternVL models typically use AutoModel with trust_remote_code
             from transformers import AutoModel
             self.model = AutoModel.from_pretrained(
-                str(self.model_path),
+                self.model_source,
                 trust_remote_code=True,
                 torch_dtype=self.torch_dtype
             ).to(self.device)
@@ -155,7 +150,7 @@ class InternVL35_4B(BaseLLM):
             logger.warning(f"AutoModel failed: {e}, trying AutoModelForCausalLM")
             try:
                 self.model = AutoModelForCausalLM.from_pretrained(
-                    str(self.model_path),
+                    self.model_source,
                     trust_remote_code=True,
                     torch_dtype=self.torch_dtype
                 ).to(self.device)
@@ -200,6 +195,12 @@ class InternVL35_4B(BaseLLM):
                             pass
         
         logger.info("Model loaded successfully")
+
+    @staticmethod
+    def _resolve_model_source(model_path: str) -> str:
+        """Return a local path if it exists, otherwise keep the model ID as-is."""
+        candidate = Path(model_path).expanduser()
+        return str(candidate) if candidate.exists() else model_path
     
     def answer_question(
         self,

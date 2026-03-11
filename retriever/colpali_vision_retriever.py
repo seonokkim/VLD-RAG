@@ -140,7 +140,7 @@ class ColPaliVisionRetriever:
         draw = ImageDraw.Draw(image)
         
         try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+            font = ImageFont.truetype("DejaVuSans.ttf", 20)
         except:
             try:
                 font = ImageFont.truetype("arial.ttf", 20)
@@ -292,18 +292,21 @@ class ColPaliVisionRetriever:
     
     def load_embeddings(
         self,
+        chunk_id: Optional[str] = None,
         page_id: Optional[str] = None,
         embedding_mode: Optional[str] = None,
-        doc_no: Optional[str] = None,
+        doc_id: Optional[str] = None,
         force_reload: bool = False
     ) -> Dict[str, Dict]:
         """Load embeddings into cache."""
-        if not self._cache_loaded or force_reload:
+        filters_active = any(value is not None for value in (chunk_id, page_id, embedding_mode, doc_id))
+        if not self._cache_loaded or force_reload or filters_active:
             self._embeddings_cache = self.vector_loader.load_all(
                 source=self.source,
+                chunk_id=chunk_id,
                 page_id=page_id,
                 embedding_mode=embedding_mode,
-                doc_no=doc_no
+                doc_id=doc_id,
             )
             self._cache_loaded = True
             logger.info(f"Loaded {len(self._embeddings_cache)} embeddings into cache")
@@ -315,7 +318,7 @@ class ColPaliVisionRetriever:
         query: Union[str, Image.Image],
         top_k: int = 10,
         embedding_mode: Optional[str] = None,
-        doc_no: Optional[str] = None,
+        doc_id: Optional[str] = None,
         min_score: float = 0.0
     ) -> List[Tuple[str, float, Dict]]:
         """
@@ -325,11 +328,11 @@ class ColPaliVisionRetriever:
             query: Query text string or PIL Image
             top_k: Number of top results to return
             embedding_mode: Filter documents by embedding_mode (optional)
-            doc_no: Filter documents by doc_no (optional)
+            doc_id: Filter documents by doc_id (optional)
             min_score: Minimum similarity score threshold
             
         Returns:
-            List of (page_id, score, embedding_data) tuples, sorted by score (descending)
+            List of (record_id, score, embedding_data) tuples, sorted by score (descending)
         """
         if embedding_mode is None:
             embedding_mode = "multi_vector"
@@ -341,7 +344,7 @@ class ColPaliVisionRetriever:
         else:
             raise ValueError(f"Query must be str or Image.Image, got {type(query)}")
         
-        self.load_embeddings(embedding_mode=embedding_mode, doc_no=doc_no)
+        self.load_embeddings(embedding_mode=embedding_mode, doc_id=doc_id)
         
         candidate_embeddings = self._embeddings_cache.copy()
         if embedding_mode:
@@ -349,16 +352,16 @@ class ColPaliVisionRetriever:
                 pid: emb for pid, emb in candidate_embeddings.items()
                 if emb.get('embedding_mode') == embedding_mode
             }
-        if doc_no:
+        if doc_id:
             candidate_embeddings = {
-                pid: emb for pid, emb in candidate_embeddings.items()
-                if emb.get('doc_no') == doc_no
+                rid: emb for rid, emb in candidate_embeddings.items()
+                if emb.get('doc_id') == doc_id
             }
         
         results = []
         query_mode = query_embedding.get('embedding_mode')
         
-        for page_id, doc_embedding in candidate_embeddings.items():
+        for record_id, doc_embedding in candidate_embeddings.items():
             try:
                 doc_mode = doc_embedding.get('embedding_mode')
                 
@@ -383,30 +386,36 @@ class ColPaliVisionRetriever:
                             doc_embedding['embedding']
                         )
                 elif query_mode == 'multi_vector':
-                    if 'token_embeddings' not in query_embedding or 'token_embeddings' not in doc_embedding:
+                    if 'token_embeddings' in query_embedding and 'token_embeddings' in doc_embedding:
+                        score = self.scorer.score_multi_vector(
+                            query_embedding['token_embeddings'],
+                            doc_embedding['token_embeddings']
+                        )
+                    elif 'pooled_embedding' in query_embedding and 'pooled_embedding' in doc_embedding:
+                        score = self.scorer.cosine_similarity(
+                            query_embedding['pooled_embedding'],
+                            doc_embedding['pooled_embedding']
+                        )
+                    else:
                         continue
-                    score = self.scorer.score_multi_vector(
-                        query_embedding['token_embeddings'],
-                        doc_embedding['token_embeddings']
-                    )
                 else:
                     logger.warning(f"Unknown embedding mode: {query_mode}")
                     continue
                 
                 if score >= min_score:
-                    results.append((page_id, score, doc_embedding))
+                    results.append((record_id, score, doc_embedding))
             
             except Exception as e:
-                logger.warning(f"Failed to score {page_id}: {e}")
+                logger.warning(f"Failed to score {record_id}: {e}")
                 continue
         
         results.sort(key=lambda x: x[1], reverse=True)
         return results[:top_k]
     
-    def get_embedding(self, page_id: str) -> Optional[Dict]:
-        """Get embedding data for a specific page_id."""
+    def get_embedding(self, record_id: str) -> Optional[Dict]:
+        """Get embedding data for a specific record identifier."""
         self.load_embeddings()
-        return self._embeddings_cache.get(page_id)
+        return self._embeddings_cache.get(record_id)
     
     def clear_cache(self):
         """Clear the embeddings cache."""
@@ -425,14 +434,14 @@ class ColPaliVisionRetriever:
             'by_doc': {}
         }
         
-        for page_id, emb in self._embeddings_cache.items():
+        for _, emb in self._embeddings_cache.items():
             mode = emb.get('embedding_mode', 'unknown')
             stats['by_mode'][mode] = stats['by_mode'].get(mode, 0) + 1
             
             source = emb.get('source', 'unknown')
             stats['by_source'][source] = stats['by_source'].get(source, 0) + 1
             
-            doc_no = emb.get('doc_no', 'unknown')
-            stats['by_doc'][doc_no] = stats['by_doc'].get(doc_no, 0) + 1
+            doc_id = emb.get('doc_id', 'unknown')
+            stats['by_doc'][doc_id] = stats['by_doc'].get(doc_id, 0) + 1
         
         return stats

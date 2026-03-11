@@ -41,7 +41,7 @@ class Qwen3VL4BInstruct(BaseLLM):
     
     def __init__(
         self,
-        model_path: str = "../models/models-small-3b-6b/Qwen3-VL-4B-Instruct",
+        model_path: str = "Qwen/Qwen2.5-VL-3B-Instruct",
         device: Optional[str] = None,
         torch_dtype: Optional[Union[str, torch.dtype]] = None
     ):
@@ -49,7 +49,7 @@ class Qwen3VL4BInstruct(BaseLLM):
         Initialize Qwen3-VL-4B-Instruct model.
         
         Args:
-            model_path: Path to the model directory
+            model_path: Local path or Hugging Face model ID
             device: Device to use ('cuda', 'cpu', or None for auto-detection)
             torch_dtype: Torch dtype to use (None for auto-detection, or string like 'float16', 'bfloat16')
         """
@@ -61,12 +61,7 @@ class Qwen3VL4BInstruct(BaseLLM):
                 "Install with: pip install transformers torch"
             )
         
-        self.model_path = Path(model_path)
-        if not self.model_path.exists():
-            raise FileNotFoundError(
-                f"Model path does not exist: {model_path}\n"
-                f"Please check if the model is downloaded to the correct location."
-            )
+        self.model_source = self._resolve_model_source(model_path)
         
         # Auto-detect device
         if device is None:
@@ -90,20 +85,20 @@ class Qwen3VL4BInstruct(BaseLLM):
         else:
             self.torch_dtype = torch_dtype
         
-        logger.info(f"Loading Qwen3-VL-4B-Instruct from {model_path}")
+        logger.info(f"Loading Qwen3-VL-4B-Instruct from {self.model_source}")
         logger.info(f"Device: {self.device}, Dtype: {self.torch_dtype}")
         
         # Load processor
         try:
             self.processor = Qwen2VLProcessor.from_pretrained(
-                str(self.model_path),
+                self.model_source,
                 trust_remote_code=True
             )
         except Exception as e:
             logger.warning(f"Qwen2VLProcessor failed: {e}, trying AutoProcessor")
             try:
                 self.processor = AutoProcessor.from_pretrained(
-                    str(self.model_path),
+                    self.model_source,
                     trust_remote_code=True
                 )
             except Exception as e2:
@@ -124,7 +119,7 @@ class Qwen3VL4BInstruct(BaseLLM):
         
         try:
             self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-                str(self.model_path),
+                self.model_source,
                 **load_kwargs
             ).to(self.device)
             self.model.eval()
@@ -139,7 +134,7 @@ class Qwen3VL4BInstruct(BaseLLM):
                         logger.info("Using AutoModelForVision2Seq (deprecated, but available)")
                     
                     self.model = AutoModelForImageTextToText.from_pretrained(
-                        str(self.model_path),
+                        self.model_source,
                         **load_kwargs
                     ).to(self.device)
                     self.model.eval()
@@ -148,7 +143,7 @@ class Qwen3VL4BInstruct(BaseLLM):
                     from transformers import AutoModel
                     logger.warning("Trying AutoModel as last resort")
                     self.model = AutoModel.from_pretrained(
-                        str(self.model_path),
+                        self.model_source,
                         **load_kwargs
                     ).to(self.device)
                     self.model.eval()
@@ -156,6 +151,12 @@ class Qwen3VL4BInstruct(BaseLLM):
                 raise RuntimeError(f"Failed to load model: {e}, {e2}")
         
         logger.info("Model loaded successfully")
+
+    @staticmethod
+    def _resolve_model_source(model_path: str) -> str:
+        """Return a local path if it exists, otherwise keep the model ID as-is."""
+        candidate = Path(model_path).expanduser()
+        return str(candidate) if candidate.exists() else model_path
     
     def answer_question(
         self,

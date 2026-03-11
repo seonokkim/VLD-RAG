@@ -90,39 +90,48 @@ class RetrieverDbContext:
             host=host,
             port=port
         )
-        
+
         try:
             from database.entities import (
-                EmbeddingResult,
-                ColPaliEmbedding,
-                SigLIPEmbedding,
-                Chunk,
-                Page,
-                Document
+                PGVECTOR_AVAILABLE,
+                TBChunk,
+                TBDocument,
+                TBEmbedding,
+                TBPage,
+                TBRun,
+                register_vector,
             )
-            
-            self.embedding_results = EmbeddingResult
-            self.colpali_embeddings = ColPaliEmbedding
-            self.siglip_embeddings = SigLIPEmbedding
-            self.chunks = Chunk
-            self.pages = Page
-            self.documents = Document
-            
-            for model in [EmbeddingResult, ColPaliEmbedding, SigLIPEmbedding, Chunk, Page, Document]:
+
+            self.runs = TBRun
+            self.documents = TBDocument
+            self.pages = TBPage
+            self.chunks = TBChunk
+            self.embeddings = TBEmbedding
+
+            self._pgvector_available = PGVECTOR_AVAILABLE and register_vector is not None
+            self._register_vector = register_vector
+
+            for model in [TBRun, TBDocument, TBPage, TBChunk, TBEmbedding]:
                 model._meta.database = self.database
         except ImportError as e:
             logger.warning(f"Failed to import database entities: {e}")
-            self.embedding_results = None
-            self.colpali_embeddings = None
-            self.siglip_embeddings = None
-            self.chunks = None
-            self.pages = None
+            self.runs = None
             self.documents = None
-    
+            self.pages = None
+            self.chunks = None
+            self.embeddings = None
+            self._pgvector_available = False
+            self._register_vector = None
+
     def connect(self):
         """Connect to database."""
         try:
             self.database.connect()
+            if self._pgvector_available:
+                try:
+                    self._register_vector(self.database.connection())
+                except Exception as register_error:
+                    logger.warning(f"Failed to register pgvector adapter: {register_error}")
             logger.info(f"Connected to database: {self.database.database}")
         except Exception as e:
             logger.error(f"Failed to connect to database: {e}")
