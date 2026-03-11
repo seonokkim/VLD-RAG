@@ -1,11 +1,12 @@
 # VLD-RAG
 
-`VLD-RAG` is a research codebase for visually rich long-document retrieval workflows.
+`VLD-RAG` stands for Visually-rich Long Document Retrieval-Augmented Generation. It is a research codebase for question answering over multi-page documents in which relevant evidence may be distributed across text, layout, tables, charts, and figures.
 
 ![VLD-RAG overview](assets/figure.png)
 
-At the moment, this repository exposes reusable building blocks rather than a full end-to-end public product. The current codebase is centered on:
+This repository currently provides reusable research components centered on:
 
+- batch indexing for multi-page documents
 - page parsing for visually rich documents
 - sparse and dense retrieval components
 - PostgreSQL/Peewee database entities for documents, pages, chunks, and embeddings
@@ -15,6 +16,7 @@ At the moment, this repository exposes reusable building blocks rather than a fu
 
 The repository currently includes:
 
+- `batch/` for pre-indexing multi-page documents into the current database schema
 - `parser/` for page parsing and normalized parser outputs
 - `retriever/` for BM25 retrieval, ColPali-based retrieval, vector loading, and scoring
 - `database/` for the active ORM schema and pgvector field support
@@ -26,44 +28,7 @@ What it does not currently provide as a polished public interface:
 
 - a packaged Python distribution
 - a complete end-to-end benchmark reproduction pipeline
-- a single documented CLI or application entrypoint
-
-## Repository Layout
-
-```text
-VLD-RAG/
-├── configs/
-│   ├── data.yml
-│   └── model.yml
-├── database/
-│   ├── README.md
-│   ├── entities.py
-│   ├── vector_field.py
-│   └── __init__.py
-├── eval/
-│   ├── retrieval_metrics.py
-│   └── __init__.py
-├── llm/
-│   ├── base.py
-│   ├── internvl3_5_4b.py
-│   ├── qwen3_vl_4b_instruct.py
-│   └── __init__.py
-├── parser/
-│   ├── engines/
-│   │   ├── paddle_ocr.py
-│   │   └── __init__.py
-│   ├── base.py
-│   ├── schema.py
-│   └── __init__.py
-├── retriever/
-│   ├── bm25_retriever.py
-│   ├── colpali_vision_retriever.py
-│   ├── db_context.py
-│   ├── scorer.py
-│   ├── vector_loader.py
-│   └── __init__.py
-└── README.md
-```
+- a polished end-to-end application interface beyond the current utility scripts
 
 ## Main Components
 
@@ -77,6 +42,18 @@ Current parser-facing data structures:
 - `Block`
 - `BBox`
 - `RAGElement`
+
+### Batch Indexing
+
+`batch/multipage_document_index_batch.py` provides a repository-native indexing flow for multi-page documents.
+
+It can:
+
+- accept a PDF file, a page-image directory, or a directory of documents
+- render PDF pages to images when `pymupdf` is available
+- parse pages with `PaddleOCRParser`
+- save `tb_documents`, `tb_pages`, and `tb_chunks`
+- optionally precompute ColPali embeddings and save them into `tb_embeddings`
 
 ### Retriever
 
@@ -123,10 +100,11 @@ These wrappers accept either a local model path or a Hugging Face model ID.
 
 ## Configuration
 
-This repository currently includes two portable config examples:
+This repository currently includes three portable config examples:
 
 - `configs/data.yml`
 - `configs/model.yml`
+- `configs/database.yml`
 
 `configs/data.yml` defines relative paths for datasets, artifacts, outputs, and results.
 
@@ -138,6 +116,8 @@ This repository currently includes two portable config examples:
 - runtime cache settings
 
 These config files use repository-relative paths so they are easier to move across machines.
+
+If you need local secrets such as the database password or Azure OpenAI credentials, start from `.env.example` and create a local `.env` file at the repository root.
 
 ## Installation
 
@@ -156,6 +136,7 @@ Minimum recommended environment:
 
 Optional dependencies by feature:
 
+- `pymupdf` for rendering PDFs in the batch indexing script
 - `paddleocr` and `paddlepaddle` for `PaddleOCRParser`
 - `transformers` and `torch` for the LLM wrappers and ColPali retriever
 - `pgvector` for PostgreSQL vector support
@@ -174,20 +155,27 @@ Add the feature-specific packages you need on top of that base environment.
 
 ## Quick Usage
 
-### BM25 Retrieval
+### ColPali Retrieval
 
 ```python
-from retriever import BM25Retriever
+from retriever import ColPaliVisionRetriever
 
-corpus = [
-    {"id": "chunk_001", "text": "Revenue increased in Q4 due to stronger enterprise demand."},
-    {"id": "chunk_002", "text": "The chart shows year-over-year margin improvement."},
-]
+retriever = ColPaliVisionRetriever(
+    model_name="vidore/colpali-v1.2",
+    device="cuda",
+    source="database",
+)
 
-retriever = BM25Retriever(corpus=corpus)
-results = retriever.retrieve("enterprise revenue", top_k=2)
+results = retriever.search(
+    query="Find the page that discusses enterprise revenue growth.",
+    top_k=3,
+    embedding_mode="multi_vector",
+)
+
 print(results)
 ```
+
+This example assumes chunk embeddings have already been saved in `tb_embeddings`, for example through `batch/multipage_document_index_batch.py --with-embeddings`.
 
 ### Retrieval Metrics
 
@@ -234,6 +222,18 @@ page_parse = parser.parse_page(
 )
 
 print(page_parse.to_dict())
+```
+
+### Batch Indexing
+
+```bash
+python batch/multipage_document_index_batch.py "./data/raw" --data-source sample --device cpu
+```
+
+To also precompute ColPali embeddings for saved chunk crops:
+
+```bash
+python batch/multipage_document_index_batch.py "./data/raw" --data-source sample --with-embeddings --device cuda
 ```
 
 ## Database Notes

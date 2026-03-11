@@ -223,6 +223,10 @@ class VectorLoader:
             "doc_name": getattr(document, "doc_name", None),
             "chunk_index": getattr(chunk, "chunk_index", None),
             "chunk_type": getattr(chunk, "chunk_type", None),
+            "ocr_text": getattr(chunk, "ocr_text", None),
+            "markdown_text": getattr(chunk, "markdown_text", None),
+            "page_ocr_text": getattr(page, "ocr_text", None),
+            "page_markdown_text": getattr(page, "markdown_text", None),
             "run_id": row.run_id,
             "vision_encoder": row.vision_encoder,
             "model_version": row.model_version,
@@ -244,6 +248,13 @@ class VectorLoader:
             "source": "database",
             "metadata": {},
         }
+        record["text"] = (
+            record.get("markdown_text")
+            or record.get("ocr_text")
+            or record.get("page_markdown_text")
+            or record.get("page_ocr_text")
+            or ""
+        )
 
         pooled_embedding = self._to_float32_array(row.pooled_embedding_vector)
         if pooled_embedding is not None:
@@ -296,6 +307,9 @@ class VectorLoader:
             "embedding_dim": file_data.get("embedding_dim"),
             "num_vectors": file_data.get("num_tokens") or file_data.get("num_vectors"),
             "vector_dim": file_data.get("vector_dim"),
+            "ocr_text": file_data.get("ocr_text"),
+            "markdown_text": file_data.get("markdown_text"),
+            "text": file_data.get("text") or file_data.get("markdown_text") or file_data.get("ocr_text") or "",
             "file_path": str(file_path),
             "source": metadata.get("source", "file") if metadata else "file",
             "metadata": metadata or {},

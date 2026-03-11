@@ -455,6 +455,19 @@ class PaddleOCRParser(PageParser):
         crop.save(crop_path)
         
         return str(crop_path)
+
+    def _crop_and_save_chunk_image(
+        self,
+        image: Image.Image,
+        bbox: Tuple[int, int, int, int],
+        output_path: Path
+    ) -> str:
+        """Crop an arbitrary chunk region and save it to disk."""
+        x1, y1, x2, y2 = bbox
+        crop = image.crop((x1, y1, x2, y2))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        crop.save(output_path)
+        return str(output_path)
     
     def _element_to_block(self, element: RAGElement, page_parse: PageParse) -> Block:
         """
@@ -503,7 +516,9 @@ class PaddleOCRParser(PageParser):
         elements: List[RAGElement],
         doc_id: str,
         page_id: str,
-        source_key: Optional[Dict[str, Any]] = None
+        source_key: Optional[Dict[str, Any]] = None,
+        page_image: Optional[Image.Image] = None,
+        chunk_image_dir: Optional[str] = None,
     ) -> List[str]:
         """
         Save RAGElement list to tb_chunks table.
@@ -513,6 +528,8 @@ class PaddleOCRParser(PageParser):
             doc_id: Document ID
             page_id: Page ID
             source_key: Source tracking information (JSONB, e.g.: {"doc_id": "sample-doc", "page_no": 25})
+            page_image: Optional source page image used to save per-chunk crops
+            chunk_image_dir: Optional directory to save per-chunk crop images
         
         Returns:
             List[str]: List of saved chunk_id values
@@ -561,11 +578,17 @@ class PaddleOCRParser(PageParser):
             crop_image_path = ""
             if element.figure_path:
                 crop_image_path = element.figure_path
-            elif element.type in ["figure", "chart"]:
-                # Crop and save figure
-                # Original image is required, so this part needs to be implemented when actually using
+            elif page_image is not None and chunk_image_dir:
                 figure_id = f"{page_id}_chunk_{idx:04d}"
-                # crop_image_path = self._crop_and_save_figure(...)  # Original image required
+                crop_path = Path(chunk_image_dir) / f"{figure_id}.png"
+                try:
+                    crop_image_path = self._crop_and_save_chunk_image(
+                        image=page_image,
+                        bbox=element.bbox,
+                        output_path=crop_path,
+                    )
+                except Exception as crop_error:
+                    logger.warning(f"Failed to save crop image for {figure_id}: {crop_error}")
             
             # Generate chunk_id
             chunk_id = f"{page_id}_chunk_{idx:04d}"

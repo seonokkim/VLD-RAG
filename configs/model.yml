@@ -9,6 +9,11 @@ defaults:
   trust_remote_code: false
 
 retrieval:
+  hyde:
+    enabled: false
+    n: 1
+    include_original_query: false
+
   sparse:
     bm25:
       enabled: true
@@ -24,6 +29,12 @@ retrieval:
       device: cuda
       dtype: float32
       trust_remote_code: false
+
+    text_embedding:
+      enabled: false
+      text_encoder: text-embedding-3-large
+      embedding_mode: single_vector
+      source: auto
 
 llm:
   qwen3_vl_4b_instruct:
