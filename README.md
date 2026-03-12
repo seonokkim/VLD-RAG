@@ -4,6 +4,8 @@
 
 ![VLD-RAG overview](assets/figure.png)
 
+**Paper:** [VLD-RAG: Agentic Vision--Language Retrieval-Augmented Generation for Long, Visually-Rich Multi-Page Documents](https://drive.google.com/drive/folders/10KTT6bqutuEydAijIoe48sAnwVUuvBwh?usp=sharing) 
+
 This repository currently provides reusable research components centered on:
 
 - batch indexing for multi-page documents
@@ -121,41 +123,69 @@ If you need local secrets such as the database password or Azure OpenAI credenti
 
 ## Installation
 
-There is no `pyproject.toml` yet, so setup is currently manual.
+There is no `pyproject.toml` yet, so setup is currently manual. Use a virtual environment and the project requirements files.
 
-Minimum recommended environment:
+**Requirements files:**
 
-- Python 3.10+
-- `numpy`
-- `Pillow`
-- `peewee`
-- `psycopg2` or `psycopg2-binary`
-- `python-dotenv`
-- `PyYAML`
-- `rank-bm25`
+- `requirements.txt` — core dependencies (numpy, Pillow, peewee, psycopg2-binary, python-dotenv, PyYAML, rank-bm25, pytz)
+- `requirements-optional.txt` — optional by feature: `pymupdf` (PDFs), `paddleocr`/`paddlepaddle` (parser), `torch`/`transformers` (ColPali, LLM), `pgvector`, `peft`
 
-Optional dependencies by feature:
-
-- `pymupdf` for rendering PDFs in the batch indexing script
-- `paddleocr` and `paddlepaddle` for `PaddleOCRParser`
-- `transformers` and `torch` for the LLM wrappers and ColPali retriever
-- `pgvector` for PostgreSQL vector support
-- `pytz` for timestamp helpers in the ORM models
-
-Example:
+**Setup (Python 3.10+):**
 
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
 python -m pip install --upgrade pip
-pip install numpy Pillow peewee psycopg2-binary python-dotenv PyYAML rank-bm25 pytz
+pip install -r requirements.txt
 ```
 
-Add the feature-specific packages you need on top of that base environment.
+For optional features (PDF rendering, PaddleOCR, ColPali/LLM, pgvector):
+
+```bash
+pip install -r requirements-optional.txt
+```
 
 ## Quick Usage
 
-### ColPali Retrieval
+### Hybrid Retrieval
+
+Hybrid retrieval combines sparse (BM25) and dense (ColPali) retrieval, with optional HyDE query expansion. Example:
+
+```python
+from retriever import BM25Retriever, ColPaliVisionRetriever, HybridRetriever
+
+# Sparse retriever: corpus = list of {"id": chunk_id, "text": chunk_text}, e.g. from indexed chunks
+bm25 = BM25Retriever(corpus=chunk_corpus)  # or corpus_file="path/to/chunks.json"
+
+# Dense vision retriever (same as in batch indexing)
+dense = ColPaliVisionRetriever(
+    model_name="vidore/colpali-v1.2",
+    device="cuda",
+    source="database",
+)
+
+# Fuse sparse + dense; optional HyDE is used by default
+hybrid = HybridRetriever(
+    bm25_retriever=bm25,
+    dense_retriever=dense,
+    sparse_weight=0.5,
+    dense_weight=0.5,
+)
+
+results = hybrid.search(
+    query="Find the page that discusses enterprise revenue growth.",
+    top_k=5,
+    embedding_mode="multi_vector",
+    use_hyde=True,
+)
+
+for r in results:
+    print(r.get("page_number"), r.get("final_score"), r.get("text", "")[:80])
+```
+
+This assumes documents are indexed (chunks in DB for BM25 corpus and, if using dense, embeddings in `tb_embeddings` via `batch/multipage_document_index_batch.py --with-embeddings`).
+
+### Dense-only (ColPali) retrieval
 
 ```python
 from retriever import ColPaliVisionRetriever
@@ -174,8 +204,6 @@ results = retriever.search(
 
 print(results)
 ```
-
-This example assumes chunk embeddings have already been saved in `tb_embeddings`, for example through `batch/multipage_document_index_batch.py --with-embeddings`.
 
 ### Retrieval Metrics
 

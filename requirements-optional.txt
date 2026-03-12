@@ -1,0 +1,19 @@
+# Optional: install after requirements.txt for full features
+# pip install -r requirements.txt -r requirements-optional.txt
+
+# PDF rendering (batch indexing)
+pymupdf>=1.23
+
+# PaddleOCR parser
+paddleocr>=2.7
+paddlepaddle>=2.5
+
+# ColPali retriever + LLM wrappers
+torch>=2.0
+transformers>=4.36
+
+# PostgreSQL vector support
+pgvector>=0.2.4
+
+# Optional PEFT for ColPali adapters
+peft>=0.7
