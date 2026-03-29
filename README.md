@@ -4,7 +4,7 @@
 
 ![VLD-RAG overview](assets/figure.png)
 
-**Paper:** [VLD-RAG: Agentic Vision--Language Retrieval-Augmented Generation for Long, Visually-Rich Multi-Page Documents](https://drive.google.com/drive/folders/10KTT6bqutuEydAijIoe48sAnwVUuvBwh?usp=sharing) 
+**Paper:** [VLD-RAG: Agentic Vision--Language Retrieval-Augmented Generation for Long, Visually-Rich Multi-Page Documents](paper/VLD-RAG.pdf)
 
 This repository currently provides reusable research components centered on:
 
