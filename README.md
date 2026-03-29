@@ -282,6 +282,6 @@ The embedding model supports:
 - optional pooled vectors via `pooled_embedding_vector`
 - artifact-backed vectors via `embedding_path` and `storage_path`
 
-## Status
+## Acknowledgments
 
-This repository is still evolving, but the current README is intended to describe the code that exists today rather than a larger future system.
+Vision-oriented dense retrieval in this codebase builds on the ColVision family (e.g. ColPali, ColQwen2) and the training and inference tooling from [illuin-tech/colpali](https://github.com/illuin-tech/colpali).

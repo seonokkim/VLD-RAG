@@ -102,9 +102,6 @@ Thumbs.db
 
 # Project specific
 configs/config.yaml
-*.pdf
-*.jpg
-*.jpeg
 *.gif
 *.tiff
 
